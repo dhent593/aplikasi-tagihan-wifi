@@ -42,6 +42,10 @@ export default function AdminDashboard() {
     amountPaid: "", method: "Transfer Bank", date: "", memo: ""
   })
 
+  // History filters states
+  const [historySearch, setHistorySearch] = useState("")
+  const [historyMethod, setHistoryMethod] = useState("ALL")
+
   // Constants
   const MONTH_NAMES = {
     "01": "Januari", "02": "Februari", "03": "Maret", "04": "April",
@@ -110,7 +114,19 @@ export default function AdminDashboard() {
 
   const getPaymentStatus = (customerId, period) => {
     const record = payments.find(p => p.customer_id === customerId && p.period === period)
-    return record ? record.status : "N/A"
+    if (record) return record.status
+
+    const customer = customers.find(c => c.id === customerId)
+    if (!customer) return "N/A"
+
+    const joinPeriod = customer.join_date ? customer.join_date.substring(0, 7) : ""
+    const targetPeriod = `${selectedYear}-${selectedMonth}`
+
+    if (joinPeriod && period >= joinPeriod && period <= targetPeriod) {
+      return "BELUM_BAYAR"
+    }
+
+    return "N/A"
   }
 
   const getPaymentRecord = (customerId, period) => {
@@ -123,45 +139,44 @@ export default function AdminDashboard() {
     .filter(p => p.period === currentPeriod && activeCustomers.some(c => c.id === p.customer_id))
     .reduce((sum, p) => sum + parseFloat(p.amount_paid || 0), 0)
 
-  // Calculate total accumulated outstanding balance for all active customers up to current selected month
+  // Calculate total accumulated outstanding balance for all active customers up to current selected period
   let totalOutstanding = 0
-  const monthsKeys = Object.keys(MONTH_NAMES)
-  const currentMonthIdx = monthsKeys.indexOf(selectedMonth)
-
-  activeCustomers.forEach(customer => {
-    for (let i = 0; i <= currentMonthIdx; i++) {
-      const period = `${selectedYear}-${monthsKeys[i]}`
-      const status = getPaymentStatus(customer.id, period)
-      
-      if (status === "BELUM_BAYAR") {
-        totalOutstanding += parseFloat(customer.monthly_fee)
-      } else if (status === "KURANG") {
-        const record = getPaymentRecord(customer.id, period)
-        const remaining = parseFloat(customer.monthly_fee) - parseFloat(record.amount_paid || 0)
-        totalOutstanding += remaining
-      }
-    }
-  })
-
-  // List of active customers with outstanding balance for dashboard quick action
   const unpaidCustomersList = []
+  const targetPeriod = `${selectedYear}-${selectedMonth}`
+
   activeCustomers.forEach(customer => {
     let customerUnpaidTotal = 0
     let unpaidMonths = []
 
-    for (let i = 0; i <= currentMonthIdx; i++) {
-      const mKey = monthsKeys[i]
-      const period = `${selectedYear}-${mKey}`
-      const status = getPaymentStatus(customer.id, period)
+    const joinPeriod = customer.join_date ? customer.join_date.substring(0, 7) : ""
 
-      if (status === "BELUM_BAYAR") {
-        customerUnpaidTotal += parseFloat(customer.monthly_fee)
-        unpaidMonths.push(MONTH_NAMES[mKey])
-      } else if (status === "KURANG") {
-        const record = getPaymentRecord(customer.id, period)
-        const remaining = parseFloat(customer.monthly_fee) - parseFloat(record.amount_paid || 0)
-        customerUnpaidTotal += remaining
-        unpaidMonths.push(`${MONTH_NAMES[mKey]} (Kurang)`)
+    if (joinPeriod) {
+      const [joinYear, joinMonth] = joinPeriod.split("-").map(Number)
+      const [tarYear, tarMonth] = targetPeriod.split("-").map(Number)
+
+      let currentTempDate = new Date(joinYear, joinMonth - 1, 1)
+      const endTempDate = new Date(tarYear, tarMonth - 1, 1)
+
+      while (currentTempDate <= endTempDate) {
+        const year = currentTempDate.getFullYear()
+        const monthStr = String(currentTempDate.getMonth() + 1).padStart(2, "0")
+        const period = `${year}-${monthStr}`
+
+        const status = getPaymentStatus(customer.id, period)
+
+        if (status === "BELUM_BAYAR") {
+          totalOutstanding += parseFloat(customer.monthly_fee)
+          customerUnpaidTotal += parseFloat(customer.monthly_fee)
+          unpaidMonths.push(`${MONTH_NAMES[monthStr]} ${year}`)
+        } else if (status === "KURANG") {
+          const record = getPaymentRecord(customer.id, period)
+          const remaining = parseFloat(customer.monthly_fee) - parseFloat(record.amount_paid || 0)
+          totalOutstanding += remaining
+          customerUnpaidTotal += remaining
+          unpaidMonths.push(`${MONTH_NAMES[monthStr]} ${year} (Kurang)`)
+        }
+
+        currentTempDate.setMonth(currentTempDate.getMonth() + 1)
       }
     }
 
@@ -173,6 +188,16 @@ export default function AdminDashboard() {
       })
     }
   })
+
+  // Sort and slice recent transactions for dashboard and history views
+  const sortedTransactions = [...payments]
+    .filter(p => p.status !== "N/A")
+    .sort((a, b) => {
+      const dateA = a.transaction_date || a.period
+      const dateB = b.transaction_date || b.period
+      return dateB.localeCompare(dateA)
+    })
+  const recentTransactions = sortedTransactions.slice(0, 5)
 
   // --- CRUD: CUSTOMER ---
   const openAddCustModal = () => {
@@ -403,73 +428,119 @@ export default function AdminDashboard() {
     const { customerId, period, amountPaid, method, date, memo, tariff } = payModalData
     const numericPaid = amountPaid ? parseFloat(amountPaid) : 0
 
-    let status = "N/A"
-    if (numericPaid === 0) {
-      status = "BELUM_BAYAR"
-    } else if (numericPaid > 0 && numericPaid < tariff) {
-      status = "KURANG"
-    } else if (numericPaid >= tariff) {
-      status = "LUNAS"
-    }
-
     try {
+      let remainingAmount = numericPaid
+      let currentPeriodStr = period
+      let count = 0
+      const maxIterations = 24
+
+      let localPaymentsList = []
       if (isLocalMode()) {
-        const localPayments = getLocalPayments()
-        const index = localPayments.findIndex(p => p.customer_id === customerId && p.period === period)
-        const updatedRecord = {
-          customer_id: customerId,
-          period: period,
-          status,
-          amount_paid: numericPaid,
-          method,
-          transaction_date: date || null,
-          memo: memo || null
-        }
-        
-        if (index > -1) {
-          localPayments[index] = updatedRecord
-        } else {
-          localPayments.push(updatedRecord)
-        }
-        
-        setLocalPayments(localPayments)
-        setIsPayModalOpen(false)
-        showToast(`Transaksi disimpan! Status: ${status}`)
-        fetchData()
-        return
+        localPaymentsList = getLocalPayments()
       }
 
-      const { error } = await supabase
-        .from("payments")
-        .upsert({
-          customer_id: customerId,
-          period: period,
-          status,
-          amount_paid: numericPaid,
-          method,
-          transaction_date: date || null,
-          memo: memo || null
-        }, { onConflict: "customer_id,period" })
+      while (remainingAmount > 0 && count < maxIterations) {
+        // Look for existing records in current state or local list
+        const existing = isLocalMode() 
+          ? localPaymentsList.find(p => p.customer_id === customerId && p.period === currentPeriodStr)
+          : payments.find(p => p.customer_id === customerId && p.period === currentPeriodStr)
 
-      if (error) throw error
+        const alreadyPaid = existing && existing.status !== "N/A" ? parseFloat(existing.amount_paid || 0) : 0
+        const needed = Math.max(0, tariff - alreadyPaid)
+
+        if (needed > 0 || count === 0) {
+          const toApply = count === 0 && needed === 0 ? remainingAmount : Math.min(remainingAmount, needed)
+          const newTotalPaid = alreadyPaid + toApply
+
+          let status = "N/A"
+          if (newTotalPaid === 0) {
+            status = "BELUM_BAYAR"
+          } else if (newTotalPaid > 0 && newTotalPaid < tariff) {
+            status = "KURANG"
+          } else if (newTotalPaid >= tariff) {
+            status = "LUNAS"
+          }
+
+          const upsertData = {
+            customer_id: customerId,
+            period: currentPeriodStr,
+            status,
+            amount_paid: newTotalPaid,
+            method,
+            transaction_date: date || null,
+            memo: count === 0 ? memo || null : `Pelunasan otomatis (kelebihan bayar dari ${period})`
+          }
+
+          if (isLocalMode()) {
+            const index = localPaymentsList.findIndex(p => p.customer_id === customerId && p.period === currentPeriodStr)
+            if (index > -1) {
+              localPaymentsList[index] = upsertData
+            } else {
+              localPaymentsList.push(upsertData)
+            }
+          } else {
+            const { error } = await supabase
+              .from("payments")
+              .upsert(upsertData, { onConflict: "customer_id,period" })
+            
+            if (error) throw error
+          }
+
+          remainingAmount -= toApply
+        }
+
+        // Move to next month
+        const [y, m] = currentPeriodStr.split("-").map(Number)
+        let nextMonth = m + 1
+        let nextYear = y
+        if (nextMonth > 12) {
+          nextMonth = 1
+          nextYear += 1
+        }
+        currentPeriodStr = `${nextYear}-${String(nextMonth).padStart(2, "0")}`
+        count++
+      }
+
+      if (isLocalMode()) {
+        setLocalPayments(localPaymentsList)
+      }
+
       setIsPayModalOpen(false)
-      showToast(`Transaksi disimpan! Status: ${status}`)
+      showToast(`Transaksi berhasil disimpan dan dialokasikan!`)
       fetchData()
     } catch (err) {
-      showToast("Gagal menyimpan transaksi pembayaran.", "error")
+      showToast(err.message || "Gagal menyimpan transaksi pembayaran.", "error")
       setLoading(false)
     }
   }
 
   // Quick Action "Bayar" outstanding directly from dashboard
   const payOutstanding = (customerId) => {
-    for (let i = 0; i <= currentMonthIdx; i++) {
-      const period = `${selectedYear}-${monthsKeys[i]}`
-      const status = getPaymentStatus(customerId, period)
-      if (status === "BELUM_BAYAR" || status === "KURANG") {
-        const customer = customers.find(c => c.id === customerId)
-        openPayModal(customerId, period, customer ? customer.name : "")
-        return
+    const customer = customers.find(c => c.id === customerId)
+    if (!customer) return
+
+    const joinPeriod = customer.join_date ? customer.join_date.substring(0, 7) : ""
+    const targetPeriod = `${selectedYear}-${selectedMonth}`
+
+    if (joinPeriod) {
+      const [joinYear, joinMonth] = joinPeriod.split("-").map(Number)
+      const [tarYear, tarMonth] = targetPeriod.split("-").map(Number)
+
+      let currentTempDate = new Date(joinYear, joinMonth - 1, 1)
+      const endTempDate = new Date(tarYear, tarMonth - 1, 1)
+
+      while (currentTempDate <= endTempDate) {
+        const year = currentTempDate.getFullYear()
+        const monthStr = String(currentTempDate.getMonth() + 1).padStart(2, "0")
+        const period = `${year}-${monthStr}`
+
+        const status = getPaymentStatus(customerId, period)
+        if (status === "BELUM_BAYAR" || status === "KURANG") {
+          openPayModal(customerId, period, customer.name)
+          return
+        }
+
+        currentTempDate.setMonth(currentTempDate.getMonth() + 1)
       }
     }
   }
@@ -558,6 +629,12 @@ export default function AdminDashboard() {
                 >
                   Pembayaran
                 </button>
+                <button 
+                  onClick={() => setActiveTab("riwayat")} 
+                  className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition duration-300 whitespace-nowrap ${activeTab === "riwayat" ? "bg-brand-primary text-white shadow" : "text-slate-600 hover:text-brand-primary"}`}
+                >
+                  Riwayat
+                </button>
               </div>
 
               {/* Desktop Info & Logout */}
@@ -609,11 +686,21 @@ export default function AdminDashboard() {
                   <select 
                     value={selectedMonth} 
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="bg-transparent text-white border-0 font-bold focus:ring-0 focus:outline-none cursor-pointer text-sm"
+                    className="bg-transparent text-white border-0 font-bold focus:ring-0 focus:outline-none cursor-pointer text-sm pr-1"
                   >
                     {Object.entries(MONTH_NAMES).map(([key, value]) => (
-                      <option key={key} value={key} className="text-slate-800">{value} {selectedYear}</option>
+                      <option key={key} value={key} className="text-slate-800">{value}</option>
                     ))}
+                  </select>
+                  <select 
+                    value={selectedYear} 
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    className="bg-transparent text-white border-0 font-bold focus:ring-0 focus:outline-none cursor-pointer text-sm border-l border-white/20 pl-2"
+                  >
+                    <option value={2025} className="text-slate-800">2025</option>
+                    <option value={2026} className="text-slate-800">2026</option>
+                    <option value={2027} className="text-slate-800">2027</option>
+                    <option value={2028} className="text-slate-800">2028</option>
                   </select>
                 </div>
               </div>
@@ -704,6 +791,74 @@ export default function AdminDashboard() {
                 {unpaidCustomersList.length === 0 && (
                   <div className="py-8 text-center text-slate-400 font-medium">
                     Semua pelanggan aktif telah lunas membayar untuk periode terpilih.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Transactions Card */}
+            <div className="bg-white rounded-3xl shadow-md border border-amber-100/50 p-6 sm:p-8 mt-6">
+              <div className="flex justify-between items-center mb-5">
+                <h3 className="text-lg font-extrabold text-slate-850 flex items-center gap-2">
+                  Aktivitas Transaksi Terkini
+                </h3>
+                <button 
+                  onClick={() => setActiveTab("riwayat")} 
+                  className="text-xs font-bold text-brand-primary hover:text-brand-hover transition"
+                >
+                  Lihat Semua
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                  <thead>
+                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="pb-3 pr-4">Pelanggan</th>
+                      <th className="pb-3 px-4">Tanggal Bayar</th>
+                      <th className="pb-3 px-4">Metode</th>
+                      <th className="pb-3 px-4 text-right">Jumlah</th>
+                      <th className="pb-3 pl-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recentTransactions.map((tx) => {
+                      const customer = customers.find(c => c.id === tx.customer_id)
+                      const [year, month] = tx.period.split("-")
+                      const monthName = MONTH_NAMES[month] || month
+                      return (
+                        <tr key={tx.id} className="hover:bg-slate-50/50 transition">
+                          <td className="py-3.5 pr-4 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 text-slate-500 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                              {customer ? customer.name.charAt(0).toUpperCase() : "?"}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800">{customer ? customer.name : "Pelanggan Terhapus"}</p>
+                              <p className="text-[10px] text-slate-400">Periode: {monthName} {year}</p>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-600 font-medium">
+                            {tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-650 font-semibold">{tx.method}</td>
+                          <td className="py-3.5 px-4 text-right font-extrabold text-slate-700">{formatRupiah(tx.amount_paid)}</td>
+                          <td className="py-3.5 pl-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              tx.status === "LUNAS" 
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
+                                : tx.status === "KURANG" 
+                                  ? "bg-amber-50 text-amber-700 border-amber-250" 
+                                  : "bg-red-50 text-red-250 border-red-250"
+                            }`}>{tx.status}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {recentTransactions.length === 0 && (
+                  <div className="py-8 text-center text-slate-400 font-medium">
+                    Belum ada riwayat transaksi pembayaran.
                   </div>
                 )}
               </div>
@@ -876,79 +1031,268 @@ export default function AdminDashboard() {
         )}
 
         {/* --- TAB: PEMBAYARAN (MATRIX) --- */}
-        {activeTab === "pembayaran" && (
-          <div className="animate-fade-in space-y-6">
-            <div>
-              <h2 className="text-2xl font-extrabold text-slate-800 font-bold">Pencatatan Pembayaran</h2>
-              <p className="text-slate-500 text-sm">Kelola status dan input pembayaran bulanan seluruh pelanggan.</p>
-            </div>
+        {activeTab === "pembayaran" && (() => {
+          const basePeriods = Array.from({ length: 12 }, (_, i) => {
+            const monthStr = String(i + 1).padStart(2, "0")
+            return `${selectedYear}-${monthStr}`
+          })
 
-            {/* Matrix Table */}
-            <div className="bg-white rounded-3xl shadow-md border border-amber-100/50 p-4 sm:p-6 overflow-x-auto">
-              <table className="min-w-full border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="py-3 px-4 text-left text-slate-655 font-bold uppercase text-[10px] border-r border-slate-100 bg-slate-50/50 rounded-tl-2xl">Nama Pelanggan</th>
-                    {monthsKeys.map((mKey) => (
-                      <th key={mKey} className="py-3 px-1 text-center font-bold uppercase text-[9px] sm:text-[10px] text-slate-500 border-r border-slate-100 last:border-r-0">
-                        {MONTH_NAMES[mKey].slice(0, 3)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold">
-                  {customers
-                    .filter(c => c.status === "AKTIF")
-                    .map((customer) => (
-                      <tr key={customer.id} className="hover:bg-slate-50/30 transition">
-                        <td className="py-3.5 px-4 border-r border-slate-100 text-slate-800">
-                          <p className="font-extrabold text-sm leading-tight text-slate-800">{customer.name}</p>
-                          <span className="text-[10px] text-slate-400">{formatRupiah(customer.monthly_fee)}/bln</span>
-                        </td>
-                        
-                        {monthsKeys.map((mKey) => {
-                          const period = `${selectedYear}-${mKey}`
-                          const status = getPaymentStatus(customer.id, period)
+          const unpaidPeriods = payments
+            .filter(p => {
+              const isUnpaid = p.status === "BELUM_BAYAR" || p.status === "KURANG"
+              const isCustomerActive = customers.some(c => c.id === p.customer_id && c.status === "AKTIF")
+              return isUnpaid && isCustomerActive
+            })
+            .map(p => p.period)
+
+          const matrixPeriods = Array.from(new Set([...basePeriods, ...unpaidPeriods]))
+          matrixPeriods.sort((a, b) => a.localeCompare(b))
+
+          return (
+            <div className="animate-fade-in space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-extrabold text-slate-800">Pencatatan Pembayaran</h2>
+                  <p className="text-slate-500 text-sm">Kelola status dan input pembayaran bulanan seluruh pelanggan.</p>
+                </div>
+                <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-amber-100 shadow-sm flex-shrink-0">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tahun Periode:</span>
+                  <select 
+                    value={selectedYear} 
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    className="bg-transparent border-0 font-extrabold text-slate-800 focus:ring-0 focus:outline-none cursor-pointer text-sm"
+                  >
+                    <option value={2025}>2025</option>
+                    <option value={2026}>2026</option>
+                    <option value={2027}>2027</option>
+                    <option value={2028}>2028</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Matrix Table */}
+              <div className="bg-white rounded-3xl shadow-md border border-amber-100/50 p-4 sm:p-6 overflow-x-auto">
+                <table className="min-w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="py-3 px-4 text-left text-slate-600 font-bold uppercase text-[10px] border-r border-slate-100 bg-slate-50/50 rounded-tl-2xl">Nama Pelanggan</th>
+                      {matrixPeriods.map((period) => {
+                        const [year, month] = period.split("-")
+                        const monthName = MONTH_NAMES[month] ? MONTH_NAMES[month].slice(0, 3).toUpperCase() : month
+                        return (
+                          <th key={period} className="py-2.5 px-1 text-center font-bold border-r border-slate-100 last:border-r-0 min-w-[55px]">
+                            <div className="flex flex-col items-center leading-tight">
+                              <span className="font-extrabold text-[10px] sm:text-xs text-slate-700">{monthName}</span>
+                              <span className="text-[8px] text-slate-400 font-bold">{year}</span>
+                            </div>
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold">
+                    {customers
+                      .filter(c => c.status === "AKTIF")
+                      .map((customer) => (
+                        <tr key={customer.id} className="hover:bg-slate-50/30 transition">
+                          <td className="py-3.5 px-4 border-r border-slate-100 text-slate-800">
+                            <p className="font-extrabold text-sm leading-tight text-slate-800">{customer.name}</p>
+                            <span className="text-[10px] text-slate-400">{formatRupiah(customer.monthly_fee)}/bln</span>
+                          </td>
                           
-                          let cellStyle = "text-slate-400 hover:bg-slate-100"
-                          let icon = <span className="text-slate-300">-</span>
+                          {matrixPeriods.map((period) => {
+                            const status = getPaymentStatus(customer.id, period)
+                            
+                            let cellStyle = "text-slate-400 hover:bg-slate-100"
+                            let icon = <span className="text-slate-300">-</span>
 
-                          if (status === "LUNAS") {
-                            cellStyle = "bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 font-bold"
-                            icon = <Check className="w-4 h-4 mx-auto stroke-[3]" />
-                          } else if (status === "KURANG") {
-                            cellStyle = "bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 font-bold"
-                            icon = <span className="text-xs">!</span>
-                          } else if (status === "BELUM_BAYAR") {
-                            cellStyle = "bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 font-bold"
-                            icon = <X className="w-4 h-4 mx-auto stroke-[3]" />
-                          }
+                            if (status === "LUNAS") {
+                              cellStyle = "bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 font-bold"
+                              icon = <Check className="w-4 h-4 mx-auto stroke-[3]" />
+                            } else if (status === "KURANG") {
+                              cellStyle = "bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 font-bold"
+                              icon = <span className="text-xs">!</span>
+                            } else if (status === "BELUM_BAYAR") {
+                              cellStyle = "bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 font-bold"
+                              icon = <X className="w-4 h-4 mx-auto stroke-[3]" />
+                            }
 
-                          return (
-                            <td 
-                              key={mKey}
-                              onClick={() => openPayModal(customer.id, period, customer.name)}
-                              className={`py-3 px-1 text-center cursor-pointer border-r border-slate-100 ${cellStyle} last:border-r-0 transition`}
-                            >
-                              {icon}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+                            return (
+                              <td 
+                                key={period}
+                                onClick={() => openPayModal(customer.id, period, customer.name)}
+                                className={`py-3 px-1 text-center cursor-pointer border-r border-slate-100 ${cellStyle} last:border-r-0 transition`}
+                              >
+                                {icon}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Legend Box */}
+              <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-550 text-slate-500 bg-white rounded-3xl p-4 shadow-sm border border-slate-100 justify-center">
+                <div className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" /> Lunas</div>
+                <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-amber-100 border border-amber-250 flex items-center justify-center text-amber-700 text-[10px] font-bold">!</span> Kurang Lunas</div>
+                <div className="flex items-center gap-1.5"><X className="w-4 h-4 text-red-500" /> Belum Bayar</div>
+                <div className="flex items-center gap-1.5"><span className="text-slate-300 font-bold">-</span> N/A (Belum ditagih)</div>
+              </div>
             </div>
+          )
+        })()}
 
-            {/* Legend Box */}
-            <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-550 text-slate-500 bg-white rounded-3xl p-4 shadow-sm border border-slate-100 justify-center">
-              <div className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" /> Lunas</div>
-              <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-amber-100 border border-amber-250 flex items-center justify-center text-amber-700 text-[10px] font-bold">!</span> Kurang Lunas</div>
-              <div className="flex items-center gap-1.5"><X className="w-4 h-4 text-red-500" /> Belum Bayar</div>
-              <div className="flex items-center gap-1.5"><span className="text-slate-300 font-bold">-</span> N/A (Belum ditagih)</div>
+        {/* --- TAB: RIWAYAT --- */}
+        {activeTab === "riwayat" && (() => {
+          const filteredTxs = sortedTransactions.filter(tx => {
+            const customer = customers.find(c => c.id === tx.customer_id)
+            const nameMatch = customer ? customer.name.toLowerCase().includes(historySearch.toLowerCase()) : false
+            const methodMatch = historyMethod === "ALL" || tx.method === historyMethod
+            return nameMatch && methodMatch
+          })
+
+          return (
+            <div className="animate-fade-in space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-extrabold text-slate-800 font-bold">Riwayat Transaksi</h2>
+                  <p className="text-slate-500 text-sm">Semua riwayat catatan pembayaran WiFi pelanggan bulanan.</p>
+                </div>
+              </div>
+
+              {/* Controls bar */}
+              <div className="flex flex-col sm:flex-row gap-4 bg-white rounded-3xl p-4 shadow-sm border border-amber-100/50">
+                <div className="relative flex-grow">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-4 top-3.5" />
+                  <input 
+                    type="text" 
+                    placeholder="Cari nama pelanggan..." 
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition"
+                  />
+                </div>
+                <div className="w-full sm:w-48">
+                  <select 
+                    value={historyMethod}
+                    onChange={(e) => setHistoryMethod(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition cursor-pointer font-bold text-slate-700"
+                  >
+                    <option value="ALL">Semua Metode</option>
+                    <option value="Transfer Bank">Transfer Bank</option>
+                    <option value="Tunai / Cash">Tunai / Cash</option>
+                    <option value="E-Wallet">E-Wallet</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Table (Desktop) */}
+              <div className="hidden md:block bg-white rounded-3xl shadow-md border border-amber-100/50 overflow-hidden">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50/50">
+                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="py-4 px-6">Pelanggan</th>
+                      <th className="py-4 px-6">Periode Tagihan</th>
+                      <th className="py-4 px-6">Tanggal Bayar</th>
+                      <th className="py-4 px-6">Metode</th>
+                      <th className="py-4 px-6 text-right">Jumlah Dibayar</th>
+                      <th className="py-4 px-6">Status</th>
+                      <th className="py-4 px-6">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold">
+                    {filteredTxs.map((tx) => {
+                      const customer = customers.find(c => c.id === tx.customer_id)
+                      const [year, month] = tx.period.split("-")
+                      const monthName = MONTH_NAMES[month] || month
+                      return (
+                        <tr key={tx.id} className="hover:bg-slate-50/30 transition text-slate-700">
+                          <td className="py-4 px-6">
+                            <p className="font-extrabold text-slate-800 text-sm">{customer ? customer.name : "Pelanggan Terhapus"}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{customer ? customer.address : ""}</p>
+                          </td>
+                          <td className="py-4 px-6 font-bold">{monthName} {year}</td>
+                          <td className="py-4 px-6 font-medium">{tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}</td>
+                          <td className="py-4 px-6 font-bold">{tx.method}</td>
+                          <td className="py-4 px-6 text-right font-extrabold text-slate-800">{formatRupiah(tx.amount_paid)}</td>
+                          <td className="py-4 px-6">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                              tx.status === "LUNAS" 
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
+                                : tx.status === "KURANG" 
+                                  ? "bg-amber-50 text-amber-700 border-amber-250" 
+                                  : "bg-red-50 text-red-250 border-red-250"
+                            }`}>{tx.status}</span>
+                          </td>
+                          <td className="py-4 px-6 text-xs text-slate-500 font-medium max-w-xs truncate" title={tx.memo}>{tx.memo || "-"}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {filteredTxs.length === 0 && (
+                  <div className="py-12 text-center text-slate-400 font-medium">
+                    Tidak ditemukan riwayat transaksi pembayaran.
+                  </div>
+                )}
+              </div>
+
+              {/* Cards (Mobile) */}
+              <div className="block md:hidden space-y-4">
+                {filteredTxs.map((tx) => {
+                  const customer = customers.find(c => c.id === tx.customer_id)
+                  const [year, month] = tx.period.split("-")
+                  const monthName = MONTH_NAMES[month] || month
+                  return (
+                    <div key={tx.id} className="bg-white rounded-3xl p-5 shadow-md border border-amber-100/50 space-y-3">
+                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                        <div>
+                          <h4 className="font-extrabold text-slate-800 text-sm">{customer ? customer.name : "Pelanggan Terhapus"}</h4>
+                          <p className="text-[10px] text-slate-400">Periode: {monthName} {year}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                          tx.status === "LUNAS" 
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
+                            : tx.status === "KURANG" 
+                              ? "bg-amber-50 text-amber-700 border-amber-250" 
+                              : "bg-red-50 text-red-250 border-red-250"
+                        }`}>{tx.status}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-y-2 text-xs leading-tight">
+                        <div>
+                          <p className="text-slate-400 font-semibold mb-0.5">Jumlah Bayar</p>
+                          <p className="font-extrabold text-slate-800">{formatRupiah(tx.amount_paid)}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400 font-semibold mb-0.5">Metode</p>
+                          <p className="font-bold text-slate-700">{tx.method}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-slate-400 font-semibold mb-0.5">Tanggal Transaksi</p>
+                          <p className="font-medium text-slate-600">{tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}</p>
+                        </div>
+                        {tx.memo && (
+                          <div className="col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Memo</p>
+                            <p className="text-slate-600 italic font-medium leading-normal">{tx.memo}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                {filteredTxs.length === 0 && (
+                  <div className="py-12 text-center text-slate-400 font-medium">
+                    Tidak ditemukan riwayat transaksi pembayaran.
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
       </main>
 

@@ -123,36 +123,54 @@ export default function CustomerBillPage({ params }) {
     )
   }
 
-  // Calculate unpaid details up to current month (Juni 2026)
+  // Calculate unpaid details dynamically from join_date up to the current calendar month
   const unpaidDetails = []
   let totalOutstanding = 0
-  const monthsKeys = Object.keys(MONTH_NAMES)
-  const currentMonthIdx = monthsKeys.indexOf(CURRENT_MONTH)
 
-  for (let i = 0; i <= currentMonthIdx; i++) {
-    const mKey = monthsKeys[i]
-    const period = `${CURRENT_YEAR}-${mKey}`
-    
-    // Find payment record
-    const record = payments.find(p => p.period === period)
-    const status = record ? record.status : "N/A"
+  if (customer) {
+    const today = new Date()
+    const curYear = today.getFullYear()
+    const curMonth = today.getMonth() // 0-indexed
 
-    if (status === "BELUM_BAYAR") {
-      unpaidDetails.push({
-        month: `${MONTH_NAMES[mKey]} ${CURRENT_YEAR}`,
-        amount: customer.monthly_fee,
-        status: "Belum Bayar"
-      })
-      totalOutstanding += parseFloat(customer.monthly_fee)
-    } else if (status === "KURANG") {
-      const paid = record.amount_paid ? parseFloat(record.amount_paid) : 0
-      const remaining = parseFloat(customer.monthly_fee) - paid
-      unpaidDetails.push({
-        month: `${MONTH_NAMES[mKey]} ${CURRENT_YEAR}`,
-        amount: remaining,
-        status: "Kurang Bayar (Sisa)"
-      })
-      totalOutstanding += remaining
+    const joinDateStr = customer.join_date || "2026-01-01"
+    const [joinYear, joinMonth] = joinDateStr.split("-").map(Number)
+    let tempDate = new Date(joinYear, joinMonth - 1, 1)
+
+    // Loop through each month from join date until the current calendar month
+    while (tempDate.getFullYear() < curYear || (tempDate.getFullYear() === curYear && tempDate.getMonth() <= curMonth)) {
+      const year = tempDate.getFullYear()
+      const monthIndexStr = String(tempDate.getMonth() + 1).padStart(2, "0")
+      const period = `${year}-${monthIndexStr}`
+
+      const record = payments.find(p => p.period === period)
+      let status = "N/A"
+      if (record) {
+        status = record.status
+      } else {
+        // If there's no record, since it falls between join date and current date, it defaults to BELUM_BAYAR
+        status = "BELUM_BAYAR"
+      }
+
+      if (status === "BELUM_BAYAR") {
+        unpaidDetails.push({
+          month: `${MONTH_NAMES[monthIndexStr]} ${year}`,
+          amount: customer.monthly_fee,
+          status: "Belum Bayar"
+        })
+        totalOutstanding += parseFloat(customer.monthly_fee)
+      } else if (status === "KURANG") {
+        const paid = record.amount_paid ? parseFloat(record.amount_paid) : 0
+        const remaining = parseFloat(customer.monthly_fee) - paid
+        unpaidDetails.push({
+          month: `${MONTH_NAMES[monthIndexStr]} ${year}`,
+          amount: remaining,
+          status: "Kurang Bayar (Sisa)"
+        })
+        totalOutstanding += remaining
+      }
+
+      // Move to next month safely (handling month boundary)
+      tempDate.setMonth(tempDate.getMonth() + 1)
     }
   }
 
