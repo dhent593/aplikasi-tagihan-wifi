@@ -120,9 +120,14 @@ export default function AdminDashboard() {
     if (!customer) return "N/A"
 
     const joinPeriod = customer.join_date ? customer.join_date.substring(0, 7) : ""
-    const targetPeriod = `${selectedYear}-${selectedMonth}`
+    
+    // Get actual current real-world year and month
+    const today = new Date()
+    const curYear = today.getFullYear()
+    const curMonthStr = String(today.getMonth() + 1).padStart(2, "0")
+    const actualCurrentPeriod = `${curYear}-${curMonthStr}`
 
-    if (joinPeriod && period >= joinPeriod && period <= targetPeriod) {
+    if (joinPeriod && period >= joinPeriod && period <= actualCurrentPeriod) {
       return "BELUM_BAYAR"
     }
 
