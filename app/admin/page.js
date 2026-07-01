@@ -42,6 +42,9 @@ export default function AdminDashboard() {
     amountPaid: "", method: "Transfer Bank", date: "", memo: ""
   })
 
+  // Modal logout confirmation state
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
+
   // History filters states
   const [historySearch, setHistorySearch] = useState("")
   const [historyMethod, setHistoryMethod] = useState("ALL")
@@ -664,7 +667,7 @@ export default function AdminDashboard() {
                 </div>
                 
                 {/* Mobile logout button */}
-                <button onClick={handleLogout} className="md:hidden p-2.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 transition">
+                <button onClick={() => setIsLogoutModalOpen(true)} className="md:hidden p-2.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 transition">
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>
@@ -703,7 +706,7 @@ export default function AdminDashboard() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                   Online
                 </span>
-                <button onClick={handleLogout} className="px-4 py-2 rounded-full bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 text-xs font-bold transition duration-300 border border-slate-200 flex items-center gap-1.5">
+                <button onClick={() => setIsLogoutModalOpen(true)} className="px-4 py-2 rounded-full bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 text-xs font-bold transition duration-300 border border-slate-200 flex items-center gap-1.5">
                   <LogOut className="w-4 h-4" />
                   Keluar
                 </button>
@@ -1600,6 +1603,40 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: LOGOUT CONFIRMATION */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsLogoutModalOpen(false)}></div>
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-amber-100/60 p-6 relative z-10 animate-scale-up">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+                <LogOut className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-800">Konfirmasi Keluar</h3>
+                <p className="text-slate-550 text-slate-550 text-sm mt-1">Apakah Anda yakin ingin keluar dari sistem admin WiFi-ID?</p>
+              </div>
+              <div className="flex w-full gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsLogoutModalOpen(false)}
+                  className="flex-1 py-2.5 text-sm font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl transition"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleLogout}
+                  className="flex-1 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-2xl shadow-md transition"
+                >
+                  Keluar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
