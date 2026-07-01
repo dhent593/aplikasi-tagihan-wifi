@@ -1,4 +1,4 @@
-# 📶 WiFi-ID: Sistem Manajemen Tagihan & Pembayaran WiFi (Tema Serabi)
+# 📶 WiFi-ID: Sistem Manajemen Tagihan & Pembayaran WiFi 
 
 Aplikasi pencatatan pembayaran WiFi pelanggan bulanan berbasis full-stack modern menggunakan **Next.js 16 (App Router)** dan **Supabase** (Database & Auth). Aplikasi ini dirancang dengan estetika visual **Amber/Orange** yang hangat dan interaktif (terinspirasi dari Serabi Pasar Turi), serta memiliki optimasi seluler (HP) yang sangat responsif.
 
@@ -54,8 +54,8 @@ Aplikasi secara otomatis berjalan dalam **Mode Lokal** jika variabel kredensial 
 4. **Buka Browser**:
    Buka alamat [http://localhost:3000](http://localhost:3000). Anda akan otomatis diarahkan ke halaman `/login`.
 5. **Gunakan Akun Demo Lokal**:
-   * **Email Admin**: `arif.setiawan2209@gmail.com`
-   * **Password**: `palamana`
+   * **Email Admin**: `example@gmail.com`
+   * **Password**: `password`
    
    *Seluruh data yang Anda buat, ubah, atau hapus di Mode Lokal akan disimpan dengan aman di memori browser Anda (`localStorage`).*
 
@@ -69,7 +69,7 @@ Bila Anda siap untuk mempublikasikan data secara online agar dapat diakses dari 
 1. Masuk ke [Supabase Console](https://supabase.com) dan buat proyek PostgreSQL baru.
 2. Buka menu **SQL Editor** di panel kiri dasbor Supabase Anda.
 3. Klik **New Query**, lalu salin dan tempelkan seluruh kode DDL dari berkas [schema.sql](file:///d:/Project/aplikasi%20tagih%2520wifi/schema.sql).
-4. Klik **Run**. Langkah ini akan membuat tabel `customers` & `payments`, mengonfigurasi Row Level Security (RLS) agar database aman, serta mendaftarkan akun admin `arif.setiawan2209@gmail.com` (password: `palamana`) dan data awal 9 pelanggan.
+4. Klik **Run**. Langkah ini akan membuat tabel `customers` & `payments`, mengonfigurasi Row Level Security (RLS) agar database aman, serta mendaftarkan akun admin `example@gmail.com` (password: `password`) dan data awal 9 pelanggan.
 
 ### 2. Hubungkan Next.js ke Supabase
 Ganti isi berkas `.env.local` Anda dengan kredensial API asli dari dasbor Supabase Anda (**Settings** > **API**):

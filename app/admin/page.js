@@ -1167,7 +1167,7 @@ export default function AdminDashboard() {
 
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/50 bg-white text-center text-xs text-slate-400 font-semibold">
-        <p>&copy; {new Date().getFullYear()} WiFi-ID. Dikembangkan untuk administrasi Wifi Bu Murtinem.</p>
+        <p>&copy; {new Date().getFullYear()} WiFi-ID. Dikembangkan untuk administrasi Wifi.</p>
       </footer>
 
     </div>

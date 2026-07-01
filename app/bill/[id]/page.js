@@ -322,7 +322,7 @@ export default function CustomerBillPage({ params }) {
         {/* Print Only Footer (Hidden in web preview) */}
         <div className="hidden print:block text-center text-[10px] text-slate-400 pt-8 border-t border-slate-100 mt-10">
           <p className="font-bold">Terima kasih atas kepercayaan Anda menggunakan layanan internet WiFi-ID.</p>
-          <p className="mt-1">Pencatatan Tagihan Sistem Manajemen WiFi-ID (Bu Murtinem)</p>
+          <p className="mt-1">Pencatatan Tagihan Sistem Manajemen WiFi-ID</p>
         </div>
 
       </div>
