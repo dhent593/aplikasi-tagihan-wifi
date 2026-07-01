@@ -647,9 +647,9 @@ export default function AdminDashboard() {
       )}
 
       {/* Header / Responsive Navbar */}
-      <div className="w-full flex justify-center py-4 px-4 sm:px-6 lg:px-8">
+      <div className="w-full sticky top-0 z-50 flex justify-center py-4 px-4 sm:px-6 lg:px-8 bg-slate-50/80 backdrop-blur-md transition-all">
         <div className="w-full max-w-7xl">
-          <nav class="bg-white/80 backdrop-blur-md shadow-lg border border-amber-100/60 rounded-3xl sm:rounded-full py-3 px-4 sm:px-6">
+          <nav className="bg-white/80 backdrop-blur-md shadow-lg border border-amber-100/60 rounded-3xl sm:rounded-full py-3 px-4 sm:px-6">
             <div className="flex flex-col md:flex-row justify-between items-center gap-3">
               {/* Logo & Status/Logout on Mobile */}
               <div className="flex justify-between items-center w-full md:w-auto">
@@ -664,13 +664,13 @@ export default function AdminDashboard() {
                 </div>
                 
                 {/* Mobile logout button */}
-                <button onclick={handleLogout} className="md:hidden p-2.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 transition">
+                <button onClick={handleLogout} className="md:hidden p-2.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 transition">
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>
               
               {/* Tabs */}
-              <div className="flex bg-amber-50/50 p-1 rounded-full border border-amber-100/50 overflow-x-auto max-w-full">
+              <div className="flex flex-wrap justify-center gap-1 bg-amber-50/50 p-1 rounded-2xl md:rounded-full border border-amber-100/50 max-w-full">
                 <button 
                   onClick={() => setActiveTab("dashboard")} 
                   className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition duration-300 whitespace-nowrap ${activeTab === "dashboard" ? "bg-brand-primary text-white shadow" : "text-slate-600 hover:text-brand-primary"}`}
