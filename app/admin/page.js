@@ -7,7 +7,7 @@ import { isLocalMode, getLocalCustomers, setLocalCustomers, getLocalPayments, se
 import { 
   Users, DollarSign, AlertCircle, Search, Plus, 
   Share2, Edit2, Trash2, RotateCcw, Check, 
-  X, LogOut, Loader2, Sparkles, Calendar, FileText
+  X, LogOut, Loader2, Sparkles, Calendar, FileText, Copy
 } from "lucide-react"
 
 export default function AdminDashboard() {
@@ -561,6 +561,60 @@ export default function AdminDashboard() {
     })
   }
 
+  const copyBillText = (customer) => {
+    const shareableUrl = `${window.location.origin}/bill/${customer.id}`
+    
+    // Calculate total outstanding balance and list of unpaid periods for this customer
+    let totalOutstanding = 0
+    let unpaidMonths = []
+    
+    const joinPeriod = customer.join_date ? customer.join_date.substring(0, 7) : ""
+    
+    // Get actual current real-world year and month
+    const today = new Date()
+    const curYear = today.getFullYear()
+    const curMonthStr = String(today.getMonth() + 1).padStart(2, "0")
+    const actualCurrentPeriod = `${curYear}-${curMonthStr}`
+
+    if (joinPeriod) {
+      const [joinYear, joinMonth] = joinPeriod.split("-").map(Number)
+      const [tarYear, tarMonth] = actualCurrentPeriod.split("-").map(Number)
+
+      let currentTempDate = new Date(joinYear, joinMonth - 1, 1)
+      const endTempDate = new Date(tarYear, tarMonth - 1, 1)
+
+      while (currentTempDate <= endTempDate) {
+        const year = currentTempDate.getFullYear()
+        const monthStr = String(currentTempDate.getMonth() + 1).padStart(2, "0")
+        const period = `${year}-${monthStr}`
+
+        const status = getPaymentStatus(customer.id, period)
+
+        if (status === "BELUM_BAYAR") {
+          totalOutstanding += parseFloat(customer.monthly_fee)
+          unpaidMonths.push(`${MONTH_NAMES[monthStr]} ${year}`)
+        } else if (status === "KURANG") {
+          const record = getPaymentRecord(customer.id, period)
+          const remaining = parseFloat(customer.monthly_fee) - parseFloat(record.amount_paid || 0)
+          totalOutstanding += remaining
+          unpaidMonths.push(`${MONTH_NAMES[monthStr]} ${year} (Kurang)`)
+        }
+
+        currentTempDate.setMonth(currentTempDate.getMonth() + 1)
+      }
+    }
+
+    const periodsText = unpaidMonths.length > 0 ? unpaidMonths.join(", ") : "Bulan Berjalan"
+    
+    const message = `Halo Kak ${customer.name},\n\nBerikut rincian tagihan internet WiFi-ID Anda:\n\n👤 *Pelanggan:* ${customer.name}\n📅 *Periode:* ${periodsText}\n💰 *Total Tagihan:* ${formatRupiah(totalOutstanding)}\n\nLink Detail Tagihan & Rekening Pembayaran:\n🔗 ${shareableUrl}\n\nMohon untuk segera melakukan pembayaran dan konfirmasi. Terima kasih! 🙏`
+
+    navigator.clipboard.writeText(message).then(() => {
+      showToast("Teks tagihan WA berhasil disalin!")
+    }).catch(() => {
+      showToast("Gagal menyalin teks tagihan.", "error")
+    })
+  }
+
   const formatRupiah = (number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -930,13 +984,13 @@ export default function AdminDashboard() {
                               {customer.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <p class="font-bold text-slate-850 text-slate-800">{customer.name}</p>
-                              <p className="text-xs text-slate-400 max-w-sm truncate">{customer.address}</p>
+                              <p className="font-bold text-slate-800">{customer.name}</p>
+                              <p className="text-xs text-slate-400 max-w-[150px] truncate" title={customer.address}>{customer.address}</p>
                             </div>
                           </td>
                           <td className="py-4 px-6 text-slate-600 font-semibold">{customer.phone}</td>
                           <td className="py-4 px-6 text-slate-800 font-bold">{formatRupiah(customer.monthly_fee)}<span className="text-xs text-slate-400 font-normal">/bulan</span></td>
-                          <td className="py-4 px-6 text-slate-655 text-slate-500">{formatDateString(customer.join_date)}</td>
+                          <td className="py-4 px-6 text-slate-500">{formatDateString(customer.join_date)}</td>
                           <td className="py-4 px-6 text-center">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
                               customer.status === "AKTIF" 
@@ -948,10 +1002,19 @@ export default function AdminDashboard() {
                             <div className="flex items-center justify-center gap-1.5">
                               <button 
                                 onClick={() => copyBillLink(customer)} 
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-bold transition shadow-sm flex items-center gap-1"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-bold transition shadow-sm flex items-center gap-1 whitespace-nowrap"
+                                title="Salin Link Tagihan Pelanggan"
                               >
                                 <Share2 className="w-3.5 h-3.5" />
                                 Salin Link
+                              </button>
+                              <button 
+                                onClick={() => copyBillText(customer)} 
+                                className="px-3 py-1.5 bg-brand-primary hover:bg-brand-hover text-white rounded-full text-xs font-bold transition shadow-sm flex items-center gap-1 whitespace-nowrap"
+                                title="Salin Teks Tagihan WhatsApp"
+                              >
+                                <Copy className="w-3.5 h-3.5 animate-pulse" />
+                                Salin Teks
                               </button>
                               <button onClick={() => openEditCustModal(customer)} className="p-1.5 rounded-full hover:bg-amber-100 text-amber-600 transition" title="Edit Data">
                                 <Edit2 className="w-4 h-4" />
@@ -1009,22 +1072,31 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                      <button 
-                        onClick={() => copyBillLink(customer)} 
-                        className="flex-grow px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-                      >
-                        <Share2 className="w-3.5 h-3.5" />
-                        Salin Link Tagihan
-                      </button>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEditCustModal(customer)} className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl transition">
+                    <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => copyBillLink(customer)} 
+                          className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 whitespace-nowrap"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          Salin Link
+                        </button>
+                        <button 
+                          onClick={() => copyBillText(customer)} 
+                          className="flex-1 px-3 py-2 bg-brand-primary hover:bg-brand-hover text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 whitespace-nowrap"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Salin Teks
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-end gap-1 mt-1">
+                        <button onClick={() => openEditCustModal(customer)} className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl transition" title="Edit Pelanggan">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => resetCustomerHistory(customer.id)} className="p-2 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-xl transition">
+                        <button onClick={() => resetCustomerHistory(customer.id)} className="p-2 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-xl transition" title="Reset Riwayat">
                           <RotateCcw className="w-4 h-4" />
                         </button>
-                        <button onClick={() => deleteCustomer(customer.id)} className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition">
+                        <button onClick={() => deleteCustomer(customer.id)} className="p-2 bg-red-50 hover:bg-red-100 text-red-650 rounded-xl transition text-red-500" title="Hapus Pelanggan">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
