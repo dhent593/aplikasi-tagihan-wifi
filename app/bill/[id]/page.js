@@ -299,16 +299,16 @@ export default function CustomerBillPage({ params }) {
               <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">BANK MANDIRI</span>
-                  <p className="font-extrabold text-slate-800 text-base mt-1">142-00-145678-9</p>
+                  <p className="font-extrabold text-slate-800 text-base mt-1">1370022045617</p>
                 </div>
-                <p className="text-xs text-slate-500 font-semibold mt-2.5">a.n. Ibu Murtinem</p>
+                <p className="text-xs text-slate-500 font-semibold mt-2.5">a.n. Arif Setiawan</p>
               </div>
               <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">BANK BCA</span>
-                  <p className="font-extrabold text-slate-800 text-base mt-1">675-0123-456</p>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">BANK BRI</span>
+                  <p className="font-extrabold text-slate-800 text-base mt-1">663401036059531</p>
                 </div>
-                <p className="text-xs text-slate-500 font-semibold mt-2.5">a.n. Ibu Murtinem</p>
+                <p className="text-xs text-slate-500 font-semibold mt-2.5">a.n. Arif Setiawan</p>
               </div>
             </div>
           </div>
