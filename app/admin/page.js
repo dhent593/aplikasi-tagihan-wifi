@@ -45,6 +45,7 @@ export default function AdminDashboard() {
   // History filters states
   const [historySearch, setHistorySearch] = useState("")
   const [historyMethod, setHistoryMethod] = useState("ALL")
+  const [historyYear, setHistoryYear] = useState("ALL")
 
   // Constants
   const MONTH_NAMES = {
@@ -1155,7 +1156,11 @@ export default function AdminDashboard() {
             const customer = customers.find(c => c.id === tx.customer_id)
             const nameMatch = customer ? customer.name.toLowerCase().includes(historySearch.toLowerCase()) : false
             const methodMatch = historyMethod === "ALL" || tx.method === historyMethod
-            return nameMatch && methodMatch
+            
+            const [txYear] = tx.period.split("-")
+            const yearMatch = historyYear === "ALL" || txYear === historyYear
+            
+            return nameMatch && methodMatch && yearMatch
           })
 
           return (
@@ -1179,7 +1184,7 @@ export default function AdminDashboard() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition"
                   />
                 </div>
-                <div className="w-full sm:w-48">
+                <div className="w-full sm:w-44">
                   <select 
                     value={historyMethod}
                     onChange={(e) => setHistoryMethod(e.target.value)}
@@ -1189,6 +1194,19 @@ export default function AdminDashboard() {
                     <option value="Transfer Bank">Transfer Bank</option>
                     <option value="Tunai / Cash">Tunai / Cash</option>
                     <option value="E-Wallet">E-Wallet</option>
+                  </select>
+                </div>
+                <div className="w-full sm:w-44">
+                  <select 
+                    value={historyYear}
+                    onChange={(e) => setHistoryYear(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition cursor-pointer font-bold text-slate-700"
+                  >
+                    <option value="ALL">Semua Tahun</option>
+                    <option value={2025}>Tahun 2025</option>
+                    <option value={2026}>Tahun 2026</option>
+                    <option value={2027}>Tahun 2027</option>
+                    <option value={2028}>Tahun 2028</option>
                   </select>
                 </div>
               </div>
