@@ -23,9 +23,9 @@ export default function CustomerBillPage({ params }) {
     "09": "September", "10": "Oktober", "11": "November", "12": "Desember"
   }
 
-  // We set June 2026 as the current selected period matching admin dashboard
+  // We set July 2026 as the current selected period matching admin dashboard
   const CURRENT_YEAR = 2026
-  const CURRENT_MONTH = "06" // Juni
+  const CURRENT_MONTH = "07" // Juli
 
   useEffect(() => {
     async function fetchBillData() {

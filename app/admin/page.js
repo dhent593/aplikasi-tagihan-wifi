@@ -21,7 +21,7 @@ export default function AdminDashboard() {
   const supabase = createClient()
 
   // Period management
-  const [selectedMonth, setSelectedMonth] = useState("06") // Default Juni
+  const [selectedMonth, setSelectedMonth] = useState("07") // Default Juli
   const [selectedYear, setSelectedYear] = useState(2026) // Default 2026
 
   // Form search query
@@ -99,6 +99,9 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
+    const today = new Date()
+    setSelectedMonth(String(today.getMonth() + 1).padStart(2, "0"))
+    setSelectedYear(today.getFullYear())
     fetchData()
   }, [])
 
