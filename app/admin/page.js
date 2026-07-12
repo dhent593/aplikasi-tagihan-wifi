@@ -45,6 +45,9 @@ export default function AdminDashboard() {
   // Modal logout confirmation state
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
 
+  // Modal reset database confirmation state
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false)
+
   // History filters states
   const [historySearch, setHistorySearch] = useState("")
   const [historyMethod, setHistoryMethod] = useState("ALL")
@@ -211,6 +214,18 @@ export default function AdminDashboard() {
     })
   const recentTransactions = sortedTransactions.slice(0, 5)
 
+  // Filtered transactions for History Tab UI and CSV Export
+  const filteredTransactions = sortedTransactions.filter(tx => {
+    const customer = customers.find(c => c.id === tx.customer_id)
+    const nameMatch = customer ? customer.name.toLowerCase().includes(historySearch.toLowerCase()) : false
+    const methodMatch = historyMethod === "ALL" || tx.method === historyMethod
+    
+    const [txYear] = tx.period.split("-")
+    const yearMatch = historyYear === "ALL" || txYear === historyYear
+    
+    return nameMatch && methodMatch && yearMatch
+  })
+
   // --- CRUD: CUSTOMER ---
   const openAddCustModal = () => {
     setEditingCustId(null)
@@ -355,6 +370,83 @@ export default function AdminDashboard() {
       fetchData()
     } catch (err) {
       showToast("Gagal me-reset histori pembayaran.", "error")
+      setLoading(false)
+    }
+  }
+
+  const exportToCSV = () => {
+    // Define headers
+    const headers = [
+      "Nama Pelanggan",
+      "Alamat",
+      "Periode",
+      "Tanggal Bayar",
+      "Metode Pembayaran",
+      "Jumlah Bayar (Rp)",
+      "Status",
+      "Keterangan / Memo"
+    ]
+    
+    // Map transactions
+    const rows = filteredTransactions.map(tx => {
+      const customer = customers.find(c => c.id === tx.customer_id)
+      const [year, month] = tx.period.split("-")
+      const monthName = MONTH_NAMES[month] || month
+      const cleanMemo = tx.memo ? tx.memo.replace(/\n/g, " ") : ""
+      return [
+        customer ? customer.name : "Pelanggan Terhapus",
+        customer ? customer.address : "",
+        `${monthName} ${year}`,
+        tx.transaction_date ? tx.transaction_date : "-",
+        tx.method,
+        tx.amount_paid,
+        tx.status,
+        cleanMemo
+      ]
+    })
+    
+    // Construct CSV content
+    const csvContent = [headers, ...rows]
+      .map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))
+      .join("\n")
+      
+    // Download logic with UTF-8 BOM
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.setAttribute("href", url)
+    const todayStr = new Date().toISOString().split("T")[0]
+    link.setAttribute("download", `Riwayat_Transaksi_WiFi_${todayStr}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    showToast("Data transaksi berhasil diekspor.")
+  }
+
+  const handleResetAllPayments = async () => {
+    setLoading(true)
+    try {
+      if (isLocalMode()) {
+        setLocalPayments([])
+        showToast("Seluruh riwayat pembayaran berhasil di-reset.")
+        setIsResetModalOpen(false)
+        fetchData()
+        return
+      }
+
+      // Delete all payments from Supabase
+      const { error } = await supabase
+        .from("payments")
+        .delete()
+        .neq("status", "none-existent-status")
+
+      if (error) throw error
+      showToast("Seluruh riwayat pembayaran berhasil di-reset.")
+      setIsResetModalOpen(false)
+      fetchData()
+    } catch (err) {
+      showToast("Gagal mereset data pembayaran: " + err.message, "error")
+    } finally {
       setLoading(false)
     }
   }
@@ -1229,171 +1321,172 @@ export default function AdminDashboard() {
         })()}
 
         {/* --- TAB: RIWAYAT --- */}
-        {activeTab === "riwayat" && (() => {
-          const filteredTxs = sortedTransactions.filter(tx => {
-            const customer = customers.find(c => c.id === tx.customer_id)
-            const nameMatch = customer ? customer.name.toLowerCase().includes(historySearch.toLowerCase()) : false
-            const methodMatch = historyMethod === "ALL" || tx.method === historyMethod
-            
-            const [txYear] = tx.period.split("-")
-            const yearMatch = historyYear === "ALL" || txYear === historyYear
-            
-            return nameMatch && methodMatch && yearMatch
-          })
-
-          return (
-            <div className="animate-fade-in space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-extrabold text-slate-800 font-bold">Riwayat Transaksi</h2>
-                  <p className="text-slate-500 text-sm">Semua riwayat catatan pembayaran WiFi pelanggan bulanan.</p>
-                </div>
+        {activeTab === "riwayat" && (
+          <div className="animate-fade-in space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-800">Riwayat Transaksi</h2>
+                <p className="text-slate-500 text-sm">Semua riwayat catatan pembayaran WiFi pelanggan bulanan.</p>
               </div>
-
-              {/* Controls bar */}
-              <div className="flex flex-col sm:flex-row gap-4 bg-white rounded-3xl p-4 shadow-sm border border-amber-100/50">
-                <div className="relative flex-grow">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-4 top-3.5" />
-                  <input 
-                    type="text" 
-                    placeholder="Cari nama pelanggan..." 
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition"
-                  />
-                </div>
-                <div className="w-full sm:w-44">
-                  <select 
-                    value={historyMethod}
-                    onChange={(e) => setHistoryMethod(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition cursor-pointer font-bold text-slate-700"
-                  >
-                    <option value="ALL">Semua Metode</option>
-                    <option value="Transfer Bank">Transfer Bank</option>
-                    <option value="Tunai / Cash">Tunai / Cash</option>
-                    <option value="E-Wallet">E-Wallet</option>
-                  </select>
-                </div>
-                <div className="w-full sm:w-44">
-                  <select 
-                    value={historyYear}
-                    onChange={(e) => setHistoryYear(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition cursor-pointer font-bold text-slate-700"
-                  >
-                    <option value="ALL">Semua Tahun</option>
-                    <option value={2025}>Tahun 2025</option>
-                    <option value={2026}>Tahun 2026</option>
-                    <option value={2027}>Tahun 2027</option>
-                    <option value={2028}>Tahun 2028</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Table (Desktop) */}
-              <div className="hidden md:block bg-white rounded-3xl shadow-md border border-amber-100/50 overflow-hidden">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50/50">
-                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider">
-                      <th className="py-4 px-6">Pelanggan</th>
-                      <th className="py-4 px-6">Periode Tagihan</th>
-                      <th className="py-4 px-6">Tanggal Bayar</th>
-                      <th className="py-4 px-6">Metode</th>
-                      <th className="py-4 px-6 text-right">Jumlah Dibayar</th>
-                      <th className="py-4 px-6">Status</th>
-                      <th className="py-4 px-6">Keterangan</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-semibold">
-                    {filteredTxs.map((tx) => {
-                      const customer = customers.find(c => c.id === tx.customer_id)
-                      const [year, month] = tx.period.split("-")
-                      const monthName = MONTH_NAMES[month] || month
-                      return (
-                        <tr key={tx.id} className="hover:bg-slate-50/30 transition text-slate-700">
-                          <td className="py-4 px-6">
-                            <p className="font-extrabold text-slate-800 text-sm">{customer ? customer.name : "Pelanggan Terhapus"}</p>
-                            <p className="text-[10px] text-slate-400 font-medium">{customer ? customer.address : ""}</p>
-                          </td>
-                          <td className="py-4 px-6 font-bold">{monthName} {year}</td>
-                          <td className="py-4 px-6 font-medium">{tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}</td>
-                          <td className="py-4 px-6 font-bold">{tx.method}</td>
-                          <td className="py-4 px-6 text-right font-extrabold text-slate-800">{formatRupiah(tx.amount_paid)}</td>
-                          <td className="py-4 px-6">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                              tx.status === "LUNAS" 
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
-                                : tx.status === "KURANG" 
-                                  ? "bg-amber-50 text-amber-700 border-amber-250" 
-                                  : "bg-red-50 text-red-250 border-red-250"
-                            }`}>{tx.status}</span>
-                          </td>
-                          <td className="py-4 px-6 text-xs text-slate-500 font-medium max-w-xs truncate" title={tx.memo}>{tx.memo || "-"}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-                {filteredTxs.length === 0 && (
-                  <div className="py-12 text-center text-slate-400 font-medium">
-                    Tidak ditemukan riwayat transaksi pembayaran.
-                  </div>
-                )}
-              </div>
-
-              {/* Cards (Mobile) */}
-              <div className="block md:hidden space-y-4">
-                {filteredTxs.map((tx) => {
-                  const customer = customers.find(c => c.id === tx.customer_id)
-                  const [year, month] = tx.period.split("-")
-                  const monthName = MONTH_NAMES[month] || month
-                  return (
-                    <div key={tx.id} className="bg-white rounded-3xl p-5 shadow-md border border-amber-100/50 space-y-3">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                        <div>
-                          <h4 className="font-extrabold text-slate-800 text-sm">{customer ? customer.name : "Pelanggan Terhapus"}</h4>
-                          <p className="text-[10px] text-slate-400">Periode: {monthName} {year}</p>
-                        </div>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                          tx.status === "LUNAS" 
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
-                            : tx.status === "KURANG" 
-                              ? "bg-amber-50 text-amber-700 border-amber-250" 
-                              : "bg-red-50 text-red-250 border-red-250"
-                        }`}>{tx.status}</span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-y-2 text-xs leading-tight">
-                        <div>
-                          <p className="text-slate-400 font-semibold mb-0.5">Jumlah Bayar</p>
-                          <p className="font-extrabold text-slate-800">{formatRupiah(tx.amount_paid)}</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400 font-semibold mb-0.5">Metode</p>
-                          <p className="font-bold text-slate-700">{tx.method}</p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-slate-400 font-semibold mb-0.5">Tanggal Transaksi</p>
-                          <p className="font-medium text-slate-600">{tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}</p>
-                        </div>
-                        {tx.memo && (
-                          <div className="col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Memo</p>
-                            <p className="text-slate-600 italic font-medium leading-normal">{tx.memo}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-                {filteredTxs.length === 0 && (
-                  <div className="py-12 text-center text-slate-400 font-medium">
-                    Tidak ditemukan riwayat transaksi pembayaran.
-                  </div>
-                )}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={exportToCSV}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md"
+                >
+                  <FileText className="w-4 h-4" /> Export Excel
+                </button>
+                <button
+                  onClick={() => setIsResetModalOpen(true)}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md"
+                >
+                  <RotateCcw className="w-4 h-4" /> Reset Data
+                </button>
               </div>
             </div>
-          )
-        })()}
+
+            {/* Controls bar */}
+            <div className="flex flex-col sm:flex-row gap-4 bg-white rounded-3xl p-4 shadow-sm border border-amber-100/50">
+              <div className="relative flex-grow">
+                <Search className="w-4 h-4 text-slate-400 absolute left-4 top-3.5" />
+                <input 
+                  type="text" 
+                  placeholder="Cari nama pelanggan..." 
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition"
+                />
+              </div>
+              <div className="w-full sm:w-44">
+                <select 
+                  value={historyMethod}
+                  onChange={(e) => setHistoryMethod(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition cursor-pointer font-bold text-slate-700"
+                >
+                  <option value="ALL">Semua Metode</option>
+                  <option value="Transfer Bank">Transfer Bank</option>
+                  <option value="Tunai / Cash">Tunai / Cash</option>
+                  <option value="E-Wallet">E-Wallet</option>
+                </select>
+              </div>
+              <div className="w-full sm:w-44">
+                <select 
+                  value={historyYear}
+                  onChange={(e) => setHistoryYear(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-primary focus:bg-white transition cursor-pointer font-bold text-slate-700"
+                >
+                  <option value="ALL">Semua Tahun</option>
+                  <option value={2025}>Tahun 2025</option>
+                  <option value={2026}>Tahun 2026</option>
+                  <option value={2027}>Tahun 2027</option>
+                  <option value={2028}>Tahun 2028</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Table (Desktop) */}
+            <div className="hidden md:block bg-white rounded-3xl shadow-md border border-amber-100/50 overflow-hidden">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50/50">
+                  <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    <th className="py-4 px-6">Pelanggan</th>
+                    <th className="py-4 px-6">Periode Tagihan</th>
+                    <th className="py-4 px-6">Tanggal Bayar</th>
+                    <th className="py-4 px-6">Metode</th>
+                    <th className="py-4 px-6 text-right">Jumlah Dibayar</th>
+                    <th className="py-4 px-6">Status</th>
+                    <th className="py-4 px-6">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold">
+                  {filteredTransactions.map((tx) => {
+                    const customer = customers.find(c => c.id === tx.customer_id)
+                    const [year, month] = tx.period.split("-")
+                    const monthName = MONTH_NAMES[month] || month
+                    return (
+                      <tr key={tx.id} className="hover:bg-slate-50/30 transition text-slate-700">
+                        <td className="py-4 px-6">
+                          <p className="font-extrabold text-slate-800 text-sm">{customer ? customer.name : "Pelanggan Terhapus"}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{customer ? customer.address : ""}</p>
+                        </td>
+                        <td className="py-4 px-6 font-bold">{monthName} {year}</td>
+                        <td className="py-4 px-6 font-medium">{tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}</td>
+                        <td className="py-4 px-6 font-bold">{tx.method}</td>
+                        <td className="py-4 px-6 text-right font-extrabold text-slate-800">{formatRupiah(tx.amount_paid)}</td>
+                        <td className="py-4 px-6">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            tx.status === "LUNAS" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
+                              : tx.status === "KURANG" 
+                                ? "bg-amber-50 text-amber-700 border-amber-250" 
+                                : "bg-red-50 text-red-250 border-red-250"
+                          }`}>{tx.status}</span>
+                        </td>
+                        <td className="py-4 px-6 text-xs text-slate-500 font-medium max-w-xs truncate" title={tx.memo}>{tx.memo || "-"}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {filteredTransactions.length === 0 && (
+                <div className="py-12 text-center text-slate-400 font-medium">
+                  Tidak ditemukan riwayat transaksi pembayaran.
+                </div>
+              )}
+            </div>
+
+            {/* Cards (Mobile) */}
+            <div className="block md:hidden space-y-4">
+              {filteredTransactions.map((tx) => {
+                const customer = customers.find(c => c.id === tx.customer_id)
+                const [year, month] = tx.period.split("-")
+                const monthName = MONTH_NAMES[month] || month
+                return (
+                  <div key={tx.id} className="bg-white rounded-3xl p-5 shadow-md border border-amber-100/50 space-y-3">
+                    <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-sm">{customer ? customer.name : "Pelanggan Terhapus"}</h4>
+                        <p className="text-[10px] text-slate-400">Periode: {monthName} {year}</p>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                        tx.status === "LUNAS" 
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-250" 
+                          : tx.status === "KURANG" 
+                            ? "bg-amber-50 text-amber-700 border-amber-250" 
+                            : "bg-red-50 text-red-250 border-red-250"
+                      }`}>{tx.status}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-y-2 text-xs leading-tight">
+                      <div>
+                        <p className="text-slate-400 font-semibold mb-0.5">Jumlah Bayar</p>
+                        <p className="font-extrabold text-slate-800">{formatRupiah(tx.amount_paid)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 font-semibold mb-0.5">Metode</p>
+                        <p className="font-bold text-slate-700">{tx.method}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-slate-400 font-semibold mb-0.5">Tanggal Transaksi</p>
+                        <p className="font-medium text-slate-600">{tx.transaction_date ? formatDateString(tx.transaction_date) : "-"}</p>
+                      </div>
+                      {tx.memo && (
+                        <div className="col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Memo</p>
+                          <p className="text-slate-600 italic font-medium leading-normal">{tx.memo}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {filteredTransactions.length === 0 && (
+                <div className="py-12 text-center text-slate-400 font-medium">
+                  Tidak ditemukan riwayat transaksi pembayaran.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       </main>
 
@@ -1637,6 +1730,45 @@ export default function AdminDashboard() {
                   className="flex-1 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-2xl shadow-md transition"
                 >
                   Keluar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL: RESET PAYMENTS CONFIRMATION */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsResetModalOpen(false)}></div>
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-amber-100/60 p-6 relative z-10 animate-scale-up">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-800">Reset Seluruh Data Transaksi</h3>
+                <p className="text-slate-500 text-sm mt-2 leading-relaxed">
+                  Apakah Anda yakin ingin menghapus <strong>seluruh riwayat pembayaran</strong> pelanggan? 
+                  Tindakan ini akan mengosongkan semua catatan transaksi dan menyetel ulang status pembayaran pelanggan kembali ke awal.
+                </p>
+                <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-2xl p-3.5 mt-3 text-left leading-relaxed">
+                  ⚠️ <strong>Perhatian:</strong> Tindakan ini bersifat permanen dan tidak dapat dibatalkan. Pastikan Anda telah melakukan <strong>Export Excel</strong> terlebih dahulu untuk arsip data.
+                </div>
+              </div>
+              <div className="flex w-full gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="flex-1 py-2.5 text-sm font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl transition border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleResetAllPayments}
+                  className="flex-1 py-2.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-2xl shadow-md transition"
+                >
+                  Reset Sekarang
                 </button>
               </div>
             </div>
